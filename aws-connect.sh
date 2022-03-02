@@ -4,10 +4,7 @@ set -e
 
 # replace with your hostname
 # path to the patched openvpn
-#OVPN_BIN="/opt/awsvpnclient-ovpn2.4.9/sbin/openvpn"
-#OVPN_BIN="/opt/awsvpnclient-ovpn2.4.9-3/sbin/openvpn"
-#OVPN_BIN="/opt/awsvpnclient-ovpn2.4.11/sbin/openvpn"
-OVPN_BIN="/opt/awsvpnclient-ovpn2.5.1/sbin/openvpn"
+OVPN_BIN="./build/sbin/openvpn"
 OVPN_CONF="vpn.conf"
 
 wait_file() {

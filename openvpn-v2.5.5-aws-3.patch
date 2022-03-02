@@ -1,0 +1,298 @@
+diff -urNb openvpn-2.5.5/openvpn-v2.5.5-aws-3.patch openvpn-2.5.5-aws-3/openvpn-v2.5.5-aws-3.patch
+--- openvpn-2.5.5/openvpn-v2.5.5-aws-3.patch	1969-12-31 18:00:00.000000000 -0600
++++ openvpn-2.5.5-aws-3/openvpn-v2.5.5-aws-3.patch	2022-02-24 19:04:19.448487597 -0600
+@@ -0,0 +1,147 @@
++diff -Naur ../openvpn-2.5.5/src/openvpn/buffer.h src/openvpn/buffer.h
++--- ../openvpn-2.5.5/src/openvpn/buffer.h	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/buffer.h	2022-02-24 18:57:26.942553692 -0600
++@@ -27,7 +27,7 @@
++ #include "basic.h"
++ #include "error.h"
++ 
++-#define BUF_SIZE_MAX 1000000
+++#define BUF_SIZE_MAX 1 << 21
++ 
++ /*
++  * Define verify_align function, otherwise
++diff -Naur ../openvpn-2.5.5/src/openvpn/common.h src/openvpn/common.h
++--- ../openvpn-2.5.5/src/openvpn/common.h	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/common.h	2022-02-24 18:57:26.942553692 -0600
++@@ -75,7 +75,7 @@
++  * maximum size of a single TLS message (cleartext).
++  * This parameter must be >= PUSH_BUNDLE_SIZE
++  */
++-#define TLS_CHANNEL_BUF_SIZE 2048
+++#define TLS_CHANNEL_BUF_SIZE 1 << 18
++ 
++ /*
++  * This parameter controls the maximum size of a bundle
++diff -Naur ../openvpn-2.5.5/src/openvpn/error.h src/openvpn/error.h
++--- ../openvpn-2.5.5/src/openvpn/error.h	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/error.h	2022-02-24 18:57:26.942553692 -0600
++@@ -36,7 +36,10 @@
++ #ifdef ENABLE_PKCS11
++ #define ERR_BUF_SIZE 8192
++ #else
++-#define ERR_BUF_SIZE 1280
+++/*
+++ * Increase the error buffer size to 256 KB.
+++ */
+++#define ERR_BUF_SIZE 1 << 18
++ #endif
++ 
++ struct gc_arena;
++diff -Naur ../openvpn-2.5.5/src/openvpn/manage.c src/openvpn/manage.c
++--- ../openvpn-2.5.5/src/openvpn/manage.c	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/manage.c	2022-02-24 18:57:55.082037737 -0600
++@@ -2240,7 +2240,7 @@
++     /*
++      * read command line from socket
++      */
++-    unsigned char buf[256];
+++    unsigned char buf[MANAGEMENT_SOCKET_READ_BUFFER_SIZE];
++     int len = 0;
++ 
++ #ifdef TARGET_ANDROID
++@@ -2331,7 +2331,7 @@
++ static int
++ man_write(struct management *man)
++ {
++-    const int size_hint = 1024;
+++    const int size_hint = 8192;
++     int sent = 0;
++     const struct buffer *buf;
++ 
++@@ -2580,7 +2580,7 @@
++          * Allocate helper objects for command line input and
++          * command output from/to the socket.
++          */
++-        man->connection.in = command_line_new(1024);
+++        man->connection.in = command_line_new(COMMAND_LINE_OPTION_BUFFER_SIZE);
++         man->connection.out = buffer_list_new(0);
++ 
++         /*
++diff -Naur ../openvpn-2.5.5/src/openvpn/manage.h src/openvpn/manage.h
++--- ../openvpn-2.5.5/src/openvpn/manage.h	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/manage.h	2022-02-24 18:57:43.762245039 -0600
++@@ -34,9 +34,12 @@
++ #define MANAGEMENT_VERSION                      3
++ #define MANAGEMENT_N_PASSWORD_RETRIES           3
++ #define MANAGEMENT_LOG_HISTORY_INITIAL_SIZE   100
++-#define MANAGEMENT_ECHO_BUFFER_SIZE           100
+++#define MANAGEMENT_ECHO_BUFFER_SIZE           8192
++ #define MANAGEMENT_STATE_BUFFER_SIZE          100
++ 
+++#define COMMAND_LINE_OPTION_BUFFER_SIZE OPTION_PARM_SIZE
+++#define MANAGEMENT_SOCKET_READ_BUFFER_SIZE OPTION_PARM_SIZE
+++
++ /*
++  * Management-interface-based deferred authentication
++  */
++diff -Naur ../openvpn-2.5.5/src/openvpn/misc.h src/openvpn/misc.h
++--- ../openvpn-2.5.5/src/openvpn/misc.h	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/misc.h	2022-02-24 18:57:26.942553692 -0600
++@@ -72,7 +72,10 @@
++ #ifdef ENABLE_PKCS11
++ #define USER_PASS_LEN 4096
++ #else
++-#define USER_PASS_LEN 128
+++/*
+++ * Increase the username and password length size to 128KB.
+++ */
+++#define USER_PASS_LEN 1 << 17
++ #endif
++     char username[USER_PASS_LEN];
++     char password[USER_PASS_LEN];
++diff -Naur ../openvpn-2.5.5/src/openvpn/options.h src/openvpn/options.h
++--- ../openvpn-2.5.5/src/openvpn/options.h	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/options.h	2022-02-24 18:57:26.942553692 -0600
++@@ -53,8 +53,8 @@
++ /*
++  * Max size of options line and parameter.
++  */
++-#define OPTION_PARM_SIZE 256
++-#define OPTION_LINE_SIZE 256
+++#define OPTION_PARM_SIZE USER_PASS_LEN
+++#define OPTION_LINE_SIZE OPTION_PARM_SIZE
++ 
++ extern const char title_string[];
++ 
++diff -Naur ../openvpn-2.5.5/src/openvpn/ssl.c src/openvpn/ssl.c
++--- ../openvpn-2.5.5/src/openvpn/ssl.c	2021-12-15 00:33:55.000000000 -0600
+++++ src/openvpn/ssl.c	2022-02-24 18:57:26.942553692 -0600
++@@ -2141,7 +2141,7 @@
++ static bool
++ write_empty_string(struct buffer *buf)
++ {
++-    if (!buf_write_u16(buf, 0))
+++    if (!buf_write_u32(buf, 0))
++     {
++         return false;
++     }
++@@ -2156,7 +2156,7 @@
++     {
++         return false;
++     }
++-    if (!buf_write_u16(buf, len))
+++    if (!buf_write_u32(buf, len))
++     {
++         return false;
++     }
++@@ -2440,6 +2440,10 @@
++         }
++     }
++ 
+++    // Write key length in the first 4 octets of the buffer.
+++    uint32_t length = BLEN(buf);
+++    memcpy(buf->data, &length, sizeof(length));
+++
++     return true;
++ 
++ error:
+diff -urNb openvpn-2.5.5/src/openvpn/buffer.h openvpn-2.5.5-aws-3/src/openvpn/buffer.h
+--- openvpn-2.5.5/src/openvpn/buffer.h	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/buffer.h	2022-02-24 18:57:26.942553692 -0600
+@@ -27,7 +27,7 @@
+ #include "basic.h"
+ #include "error.h"
+ 
+-#define BUF_SIZE_MAX 1000000
++#define BUF_SIZE_MAX 1 << 21
+ 
+ /*
+  * Define verify_align function, otherwise
+diff -urNb openvpn-2.5.5/src/openvpn/common.h openvpn-2.5.5-aws-3/src/openvpn/common.h
+--- openvpn-2.5.5/src/openvpn/common.h	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/common.h	2022-02-24 18:57:26.942553692 -0600
+@@ -75,7 +75,7 @@
+  * maximum size of a single TLS message (cleartext).
+  * This parameter must be >= PUSH_BUNDLE_SIZE
+  */
+-#define TLS_CHANNEL_BUF_SIZE 2048
++#define TLS_CHANNEL_BUF_SIZE 1 << 18
+ 
+ /*
+  * This parameter controls the maximum size of a bundle
+diff -urNb openvpn-2.5.5/src/openvpn/error.h openvpn-2.5.5-aws-3/src/openvpn/error.h
+--- openvpn-2.5.5/src/openvpn/error.h	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/error.h	2022-02-24 18:57:26.942553692 -0600
+@@ -36,7 +36,10 @@
+ #ifdef ENABLE_PKCS11
+ #define ERR_BUF_SIZE 8192
+ #else
+-#define ERR_BUF_SIZE 1280
++/*
++ * Increase the error buffer size to 256 KB.
++ */
++#define ERR_BUF_SIZE 1 << 18
+ #endif
+ 
+ struct gc_arena;
+diff -urNb openvpn-2.5.5/src/openvpn/manage.c openvpn-2.5.5-aws-3/src/openvpn/manage.c
+--- openvpn-2.5.5/src/openvpn/manage.c	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/manage.c	2022-02-24 18:57:55.082037737 -0600
+@@ -2240,7 +2240,7 @@
+     /*
+      * read command line from socket
+      */
+-    unsigned char buf[256];
++    unsigned char buf[MANAGEMENT_SOCKET_READ_BUFFER_SIZE];
+     int len = 0;
+ 
+ #ifdef TARGET_ANDROID
+@@ -2331,7 +2331,7 @@
+ static int
+ man_write(struct management *man)
+ {
+-    const int size_hint = 1024;
++    const int size_hint = 8192;
+     int sent = 0;
+     const struct buffer *buf;
+ 
+@@ -2580,7 +2580,7 @@
+          * Allocate helper objects for command line input and
+          * command output from/to the socket.
+          */
+-        man->connection.in = command_line_new(1024);
++        man->connection.in = command_line_new(COMMAND_LINE_OPTION_BUFFER_SIZE);
+         man->connection.out = buffer_list_new(0);
+ 
+         /*
+diff -urNb openvpn-2.5.5/src/openvpn/manage.h openvpn-2.5.5-aws-3/src/openvpn/manage.h
+--- openvpn-2.5.5/src/openvpn/manage.h	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/manage.h	2022-02-24 18:57:43.762245039 -0600
+@@ -34,9 +34,12 @@
+ #define MANAGEMENT_VERSION                      3
+ #define MANAGEMENT_N_PASSWORD_RETRIES           3
+ #define MANAGEMENT_LOG_HISTORY_INITIAL_SIZE   100
+-#define MANAGEMENT_ECHO_BUFFER_SIZE           100
++#define MANAGEMENT_ECHO_BUFFER_SIZE           8192
+ #define MANAGEMENT_STATE_BUFFER_SIZE          100
+ 
++#define COMMAND_LINE_OPTION_BUFFER_SIZE OPTION_PARM_SIZE
++#define MANAGEMENT_SOCKET_READ_BUFFER_SIZE OPTION_PARM_SIZE
++
+ /*
+  * Management-interface-based deferred authentication
+  */
+diff -urNb openvpn-2.5.5/src/openvpn/misc.h openvpn-2.5.5-aws-3/src/openvpn/misc.h
+--- openvpn-2.5.5/src/openvpn/misc.h	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/misc.h	2022-02-24 18:57:26.942553692 -0600
+@@ -72,7 +72,10 @@
+ #ifdef ENABLE_PKCS11
+ #define USER_PASS_LEN 4096
+ #else
+-#define USER_PASS_LEN 128
++/*
++ * Increase the username and password length size to 128KB.
++ */
++#define USER_PASS_LEN 1 << 17
+ #endif
+     char username[USER_PASS_LEN];
+     char password[USER_PASS_LEN];
+diff -urNb openvpn-2.5.5/src/openvpn/options.h openvpn-2.5.5-aws-3/src/openvpn/options.h
+--- openvpn-2.5.5/src/openvpn/options.h	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/options.h	2022-02-24 18:57:26.942553692 -0600
+@@ -53,8 +53,8 @@
+ /*
+  * Max size of options line and parameter.
+  */
+-#define OPTION_PARM_SIZE 256
+-#define OPTION_LINE_SIZE 256
++#define OPTION_PARM_SIZE USER_PASS_LEN
++#define OPTION_LINE_SIZE OPTION_PARM_SIZE
+ 
+ extern const char title_string[];
+ 
+diff -urNb openvpn-2.5.5/src/openvpn/ssl.c openvpn-2.5.5-aws-3/src/openvpn/ssl.c
+--- openvpn-2.5.5/src/openvpn/ssl.c	2021-12-15 00:33:55.000000000 -0600
++++ openvpn-2.5.5-aws-3/src/openvpn/ssl.c	2022-02-24 18:57:26.942553692 -0600
+@@ -2141,7 +2141,7 @@
+ static bool
+ write_empty_string(struct buffer *buf)
+ {
+-    if (!buf_write_u16(buf, 0))
++    if (!buf_write_u32(buf, 0))
+     {
+         return false;
+     }
+@@ -2156,7 +2156,7 @@
+     {
+         return false;
+     }
+-    if (!buf_write_u16(buf, len))
++    if (!buf_write_u32(buf, len))
+     {
+         return false;
+     }
+@@ -2440,6 +2440,10 @@
+         }
+     }
+ 
++    // Write key length in the first 4 octets of the buffer.
++    uint32_t length = BLEN(buf);
++    memcpy(buf->data, &length, sizeof(length));
++
+     return true;
+ 
+ error:
